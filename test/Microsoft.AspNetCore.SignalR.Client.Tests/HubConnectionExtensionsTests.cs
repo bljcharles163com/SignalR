@@ -96,13 +96,12 @@ namespace Microsoft.AspNetCore.SignalR.Client.Tests
         private async Task InvokeOn(Action<HubConnection, TaskCompletionSource<object[]>> onAction, object[] args)
         {
             var connection = new TestConnection();
-            var hubConnection = new HubConnection(connection, new JsonHubProtocol(), new LoggerFactory());
+            var hubConnection = new HubConnection(() => connection, new JsonHubProtocol(), new LoggerFactory());
             var handlerTcs = new TaskCompletionSource<object[]>();
             try
             {
                 onAction(hubConnection, handlerTcs);
                 await hubConnection.StartAsync();
-                await connection.ReadHandshakeAndSendResponseAsync().OrTimeout();
 
                 await connection.ReceiveJsonMessage(
                     new
@@ -113,12 +112,11 @@ namespace Microsoft.AspNetCore.SignalR.Client.Tests
                         arguments = args
                     }).OrTimeout();
 
-                var result = await handlerTcs.Task.OrTimeout();
+                await handlerTcs.Task.OrTimeout();
             }
             finally
             {
                 await hubConnection.DisposeAsync().OrTimeout();
-                await connection.DisposeAsync().OrTimeout();
             }
         }
 
@@ -126,15 +124,13 @@ namespace Microsoft.AspNetCore.SignalR.Client.Tests
         public async Task ConnectionNotClosedOnCallbackArgumentCountMismatch()
         {
             var connection = new TestConnection();
-            var hubConnection = new HubConnection(connection, new JsonHubProtocol(), new LoggerFactory());
+            var hubConnection = new HubConnection(() => connection, new JsonHubProtocol(), new LoggerFactory());
             var receiveTcs = new TaskCompletionSource<int>();
 
             try
             {
                 hubConnection.On<int>("Foo", r => { receiveTcs.SetResult(r); });
                 await hubConnection.StartAsync().OrTimeout();
-
-                await connection.ReadHandshakeAndSendResponseAsync().OrTimeout();
 
                 await connection.ReceiveJsonMessage(
                     new
@@ -166,14 +162,13 @@ namespace Microsoft.AspNetCore.SignalR.Client.Tests
         public async Task ConnectionNotClosedOnCallbackArgumentTypeMismatch()
         {
             var connection = new TestConnection();
-            var hubConnection = new HubConnection(connection, new JsonHubProtocol(), new LoggerFactory());
+            var hubConnection = new HubConnection(() => connection, new JsonHubProtocol(), new LoggerFactory());
             var receiveTcs = new TaskCompletionSource<int>();
 
             try
             {
                 hubConnection.On<int>("Foo", r => { receiveTcs.SetResult(r); });
                 await hubConnection.StartAsync().OrTimeout();
-                await connection.ReadHandshakeAndSendResponseAsync().OrTimeout();
 
                 await connection.ReceiveJsonMessage(
                     new

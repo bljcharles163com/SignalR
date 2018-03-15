@@ -190,6 +190,10 @@ namespace Microsoft.AspNetCore.SignalR
 
                 await _connectionContext.Transport.Output.WriteAsync(ms.ToArray());
             }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error writing handshake response");
+            }
             finally
             {
                 _writeLock.Release();
