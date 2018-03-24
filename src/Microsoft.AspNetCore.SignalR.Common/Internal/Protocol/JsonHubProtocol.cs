@@ -8,6 +8,7 @@ using System.Runtime.ExceptionServices;
 using System.Text;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.SignalR.Internal.Formatters;
+using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -36,6 +37,7 @@ namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
 
         public JsonHubProtocol() : this(Options.Create(new JsonHubProtocolOptions()))
         {
+
         }
 
         public JsonHubProtocol(IOptions<JsonHubProtocolOptions> options)
@@ -56,13 +58,17 @@ namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
 
         public bool TryParseMessages(ReadOnlyMemory<byte> input, IInvocationBinder binder, IList<HubMessage> messages)
         {
-            while (TextMessageParser.TryParseMessage(ref input, out var payload))
+            using (var pooled = SharedObjectPool<Utf8BufferTextReader>.Get())
             {
-                var textReader = new Utf8BufferTextReader(payload);
-                var message = ParseMessage(textReader, binder);
-                if (message != null)
+                var textReader = pooled.Item;
+                while (TextMessageParser.TryParseMessage(ref input, out var payload))
                 {
-                    messages.Add(message);
+                    textReader.SetBuffer(input);
+                    var message = ParseMessage(textReader, binder);
+                    if (message != null)
+                    {
+                        messages.Add(message);
+                    }
                 }
             }
 
@@ -102,6 +108,7 @@ namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
 
                 using (var reader = new JsonTextReader(textReader))
                 {
+                    reader.CloseInput = false;
                     reader.ArrayPool = JsonArrayPool<char>.Shared;
 
                     JsonUtils.CheckRead(reader);

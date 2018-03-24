@@ -56,10 +56,12 @@ namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
             return new JsonTextWriter(new StreamWriter(output, _utf8NoBom, 1024, leaveOpen: true));
         }
 
-        private static JsonTextReader CreateJsonTextReader(ReadOnlyMemory<byte> payload)
+        private static JsonTextReader CreateJsonTextReader(Utf8BufferTextReader textReader, ReadOnlyMemory<byte> payload)
         {
-            var textReader = new Utf8BufferTextReader(payload);
+            textReader.SetBuffer(payload);
             var reader = new JsonTextReader(textReader);
+
+            reader.CloseInput = false;
             reader.ArrayPool = JsonArrayPool<char>.Shared;
 
             return reader;
@@ -67,7 +69,8 @@ namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
 
         public static HandshakeResponseMessage ParseResponseMessage(ReadOnlyMemory<byte> payload)
         {
-            using (var reader = CreateJsonTextReader(payload))
+            using (var pooled = SharedObjectPool<Utf8BufferTextReader>.Get())
+            using (var reader = CreateJsonTextReader(pooled.Item, payload))
             {
                 var token = JToken.ReadFrom(reader);
                 var handshakeJObject = JsonUtils.GetObject(token);
@@ -98,7 +101,8 @@ namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
                 throw new InvalidDataException("Unable to parse payload as a handshake request message.");
             }
 
-            using (var reader = CreateJsonTextReader(payload))
+            using (var pooled = SharedObjectPool<Utf8BufferTextReader>.Get())
+            using (var reader = CreateJsonTextReader(pooled.Item, payload))
             {
                 var token = JToken.ReadFrom(reader);
                 var handshakeJObject = JsonUtils.GetObject(token);

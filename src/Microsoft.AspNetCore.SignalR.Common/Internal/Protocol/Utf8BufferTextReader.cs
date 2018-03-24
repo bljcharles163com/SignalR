@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using Microsoft.Extensions.ObjectPool;
 
 namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
 {
@@ -12,7 +13,12 @@ namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
     {
         private ReadOnlyMemory<byte> _utf8Buffer;
 
-        public Utf8BufferTextReader(ReadOnlyMemory<byte> utf8Buffer)
+        public Utf8BufferTextReader()
+        {
+            
+        }
+
+        public void SetBuffer(ReadOnlyMemory<byte> utf8Buffer)
         {
             _utf8Buffer = utf8Buffer;
         }
