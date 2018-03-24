@@ -63,7 +63,7 @@ namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
                 var textReader = pooled.Item;
                 while (TextMessageParser.TryParseMessage(ref input, out var payload))
                 {
-                    textReader.SetBuffer(input);
+                    textReader.SetBuffer(payload);
                     var message = ParseMessage(textReader, binder);
                     if (message != null)
                     {
