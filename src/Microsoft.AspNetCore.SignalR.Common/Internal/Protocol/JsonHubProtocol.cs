@@ -58,7 +58,7 @@ namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
 
         public bool TryParseMessages(ReadOnlyMemory<byte> input, IInvocationBinder binder, IList<HubMessage> messages)
         {
-            using (var pooled = SharedObjectPool<Utf8BufferTextReader>.Get())
+            using (var pooled = SharedObjectPool<ReusableJsonTextReader>.Get())
             {
                 var textReader = pooled.Item;
                 while (TextMessageParser.TryParseMessage(ref input, out var payload))
@@ -81,7 +81,7 @@ namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
             TextMessageFormatter.WriteRecordSeparator(output);
         }
 
-        private HubMessage ParseMessage(TextReader textReader, IInvocationBinder binder)
+        private HubMessage ParseMessage(JsonTextReader reader, IInvocationBinder binder)
         {
             try
             {
@@ -106,127 +106,124 @@ namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
                 Dictionary<string, string> headers = null;
                 var completed = false;
 
-                using (var reader = new JsonTextReader(textReader))
+                reader.CloseInput = false;
+                reader.ArrayPool = JsonArrayPool<char>.Shared;
+
+                JsonUtils.CheckRead(reader);
+
+                // We're always parsing a JSON object
+                if (reader.TokenType != JsonToken.StartObject)
                 {
-                    reader.CloseInput = false;
-                    reader.ArrayPool = JsonArrayPool<char>.Shared;
-
-                    JsonUtils.CheckRead(reader);
-
-                    // We're always parsing a JSON object
-                    if (reader.TokenType != JsonToken.StartObject)
-                    {
-                        throw new InvalidDataException($"Unexpected JSON Token Type '{JsonUtils.GetTokenString(reader.TokenType)}'. Expected a JSON Object.");
-                    }
-
-                    do
-                    {
-                        switch (reader.TokenType)
-                        {
-                            case JsonToken.PropertyName:
-                                string memberName = reader.Value.ToString();
-
-                                switch (memberName)
-                                {
-                                    case TypePropertyName:
-                                        var messageType = JsonUtils.ReadAsInt32(reader, TypePropertyName);
-
-                                        if (messageType == null)
-                                        {
-                                            throw new InvalidDataException($"Missing required property '{TypePropertyName}'.");
-                                        }
-
-                                        type = messageType.Value;
-                                        break;
-                                    case InvocationIdPropertyName:
-                                        invocationId = JsonUtils.ReadAsString(reader, InvocationIdPropertyName);
-                                        break;
-                                    case TargetPropertyName:
-                                        target = JsonUtils.ReadAsString(reader, TargetPropertyName);
-                                        break;
-                                    case ErrorPropertyName:
-                                        error = JsonUtils.ReadAsString(reader, ErrorPropertyName);
-                                        break;
-                                    case ResultPropertyName:
-                                        JsonUtils.CheckRead(reader);
-
-                                        hasResult = true;
-
-                                        if (string.IsNullOrEmpty(invocationId))
-                                        {
-                                            // If we don't have an invocation id then we need to store it as a JToken so we can parse it later
-                                            resultToken = JToken.Load(reader);
-                                        }
-                                        else
-                                        {
-                                            // If we have an invocation id already we can parse the end result
-                                            var returnType = binder.GetReturnType(invocationId);
-                                            result = PayloadSerializer.Deserialize(reader, returnType);
-                                        }
-                                        break;
-                                    case ItemPropertyName:
-                                        JsonUtils.CheckRead(reader);
-
-                                        hasItem = true;
-
-                                        if (string.IsNullOrEmpty(invocationId))
-                                        {
-                                            // If we don't have an invocation id then we need to store it as a JToken so we can parse it later
-                                            itemToken = JToken.Load(reader);
-                                        }
-                                        else
-                                        {
-                                            var returnType = binder.GetReturnType(invocationId);
-                                            item = PayloadSerializer.Deserialize(reader, returnType);
-                                        }
-                                        break;
-                                    case ArgumentsPropertyName:
-                                        JsonUtils.CheckRead(reader);
-
-                                        if (reader.TokenType != JsonToken.StartArray)
-                                        {
-                                            throw new InvalidDataException($"Expected '{ArgumentsPropertyName}' to be of type {JTokenType.Array}.");
-                                        }
-
-                                        hasArguments = true;
-
-                                        if (string.IsNullOrEmpty(target))
-                                        {
-                                            // We don't know the method name yet so just parse an array of generic JArray
-                                            argumentsToken = JArray.Load(reader);
-                                        }
-                                        else
-                                        {
-                                            try
-                                            {
-                                                var paramTypes = binder.GetParameterTypes(target);
-                                                arguments = BindArguments(reader, paramTypes);
-                                            }
-                                            catch (Exception ex)
-                                            {
-                                                argumentBindingException = ExceptionDispatchInfo.Capture(ex);
-                                            }
-                                        }
-                                        break;
-                                    case HeadersPropertyName:
-                                        JsonUtils.CheckRead(reader);
-                                        headers = ReadHeaders(reader);
-                                        break;
-                                    default:
-                                        // Skip read the property name
-                                        JsonUtils.CheckRead(reader);
-                                        // Skip the value for this property
-                                        reader.Skip();
-                                        break;
-                                }
-                                break;
-                            case JsonToken.EndObject:
-                                completed = true;
-                                break;
-                        }
-                    }
-                    while (!completed && JsonUtils.CheckRead(reader));
+                    throw new InvalidDataException($"Unexpected JSON Token Type '{JsonUtils.GetTokenString(reader.TokenType)}'. Expected a JSON Object.");
                 }
+
+                do
+                {
+                    switch (reader.TokenType)
+                    {
+                        case JsonToken.PropertyName:
+                            string memberName = reader.Value.ToString();
+
+                            switch (memberName)
+                            {
+                                case TypePropertyName:
+                                    var messageType = JsonUtils.ReadAsInt32(reader, TypePropertyName);
+
+                                    if (messageType == null)
+                                    {
+                                        throw new InvalidDataException($"Missing required property '{TypePropertyName}'.");
+                                    }
+
+                                    type = messageType.Value;
+                                    break;
+                                case InvocationIdPropertyName:
+                                    invocationId = JsonUtils.ReadAsString(reader, InvocationIdPropertyName);
+                                    break;
+                                case TargetPropertyName:
+                                    target = JsonUtils.ReadAsString(reader, TargetPropertyName);
+                                    break;
+                                case ErrorPropertyName:
+                                    error = JsonUtils.ReadAsString(reader, ErrorPropertyName);
+                                    break;
+                                case ResultPropertyName:
+                                    JsonUtils.CheckRead(reader);
+
+                                    hasResult = true;
+
+                                    if (string.IsNullOrEmpty(invocationId))
+                                    {
+                                        // If we don't have an invocation id then we need to store it as a JToken so we can parse it later
+                                        resultToken = JToken.Load(reader);
+                                    }
+                                    else
+                                    {
+                                        // If we have an invocation id already we can parse the end result
+                                        var returnType = binder.GetReturnType(invocationId);
+                                        result = PayloadSerializer.Deserialize(reader, returnType);
+                                    }
+                                    break;
+                                case ItemPropertyName:
+                                    JsonUtils.CheckRead(reader);
+
+                                    hasItem = true;
+
+                                    if (string.IsNullOrEmpty(invocationId))
+                                    {
+                                        // If we don't have an invocation id then we need to store it as a JToken so we can parse it later
+                                        itemToken = JToken.Load(reader);
+                                    }
+                                    else
+                                    {
+                                        var returnType = binder.GetReturnType(invocationId);
+                                        item = PayloadSerializer.Deserialize(reader, returnType);
+                                    }
+                                    break;
+                                case ArgumentsPropertyName:
+                                    JsonUtils.CheckRead(reader);
+
+                                    if (reader.TokenType != JsonToken.StartArray)
+                                    {
+                                        throw new InvalidDataException($"Expected '{ArgumentsPropertyName}' to be of type {JTokenType.Array}.");
+                                    }
+
+                                    hasArguments = true;
+
+                                    if (string.IsNullOrEmpty(target))
+                                    {
+                                        // We don't know the method name yet so just parse an array of generic JArray
+                                        argumentsToken = JArray.Load(reader);
+                                    }
+                                    else
+                                    {
+                                        try
+                                        {
+                                            var paramTypes = binder.GetParameterTypes(target);
+                                            arguments = BindArguments(reader, paramTypes);
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            argumentBindingException = ExceptionDispatchInfo.Capture(ex);
+                                        }
+                                    }
+                                    break;
+                                case HeadersPropertyName:
+                                    JsonUtils.CheckRead(reader);
+                                    headers = ReadHeaders(reader);
+                                    break;
+                                default:
+                                    // Skip read the property name
+                                    JsonUtils.CheckRead(reader);
+                                    // Skip the value for this property
+                                    reader.Skip();
+                                    break;
+                            }
+                            break;
+                        case JsonToken.EndObject:
+                            completed = true;
+                            break;
+                    }
+                }
+                while (!completed && JsonUtils.CheckRead(reader));
 
                 HubMessage message;
 
