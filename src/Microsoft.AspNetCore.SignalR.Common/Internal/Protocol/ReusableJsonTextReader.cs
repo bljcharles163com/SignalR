@@ -36,6 +36,10 @@ namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
         private static FieldInfo _stringBufferField = GetFieldInfo("_stringBuffer");
         private static ConstructorInfo _jsonReaderCtor = typeof(JsonReader).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance)[0];
 
+        private static object _boxedZero = 0;
+        private static object _boxedOne = 1;
+        private static object _boxedFalse = false;
+
         private Utf8BufferTextReader _reader = new Utf8BufferTextReader();
 
         public ReusableJsonTextReader() : base(TextReader.Null)
@@ -50,11 +54,11 @@ namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
             // HACK: Reset the internal state...
             _readerField.SetValue(this, _reader);
             _charsField.SetValue(this, null);
-            _charsUsedField.SetValue(this, 0);
-            _charsPosField.SetValue(this, 0);
-            _lineStartPosField.SetValue(this, 0);
-            _lineNumberField.SetValue(this, 1);
-            _isEndOfFileField.SetValue(this, false);
+            _charsUsedField.SetValue(this, _boxedZero);
+            _charsPosField.SetValue(this, _boxedZero);
+            _lineStartPosField.SetValue(this, _boxedZero);
+            _lineNumberField.SetValue(this, _boxedOne);
+            _isEndOfFileField.SetValue(this, _boxedFalse);
             _stringBufferField.SetValue(this, null);
             _jsonReaderCtor.Invoke(this, Array.Empty<object>());
             CloseInput = false;
