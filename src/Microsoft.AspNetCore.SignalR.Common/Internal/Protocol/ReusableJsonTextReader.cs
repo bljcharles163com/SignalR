@@ -3,6 +3,7 @@
 
 using System;
 using System.IO;
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -26,14 +27,16 @@ namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
         private IArrayPool<char> _arrayPool;
          */
 
-        private static FieldInfo _readerField = GetFieldInfo("_reader");
-        private static FieldInfo _charsField = GetFieldInfo("_chars");
-        private static FieldInfo _charsUsedField = GetFieldInfo("_charsUsed");
-        private static FieldInfo _charsPosField = GetFieldInfo("_charPos");
-        private static FieldInfo _lineStartPosField = GetFieldInfo("_lineStartPos");
-        private static FieldInfo _lineNumberField = GetFieldInfo("_lineStartPos");
-        private static FieldInfo _isEndOfFileField = GetFieldInfo("_isEndOfFile");
-        private static FieldInfo _stringBufferField = GetFieldInfo("_stringBuffer");
+        private static Action<JsonTextReader, TextReader> _readerField = GetFieldSetter<JsonTextReader, TextReader>("_reader");
+        private static Action<JsonTextReader, char[]> _charsField = GetFieldSetter<JsonTextReader, char[]>("_chars");
+        private static Func<JsonTextReader, char[]> _getChars = GetFieldGetter<JsonTextReader, char[]>("_chars");
+        private static Action<JsonTextReader, int> _charsUsedField = GetFieldSetter<JsonTextReader, int>("_charsUsed");
+        private static Action<JsonTextReader, int> _charsPosField = GetFieldSetter<JsonTextReader, int>("_charPos");
+        private static Action<JsonTextReader, int> _lineStartPosField = GetFieldSetter<JsonTextReader, int>("_lineStartPos");
+        private static Action<JsonTextReader, int> _lineNumberField = GetFieldSetter<JsonTextReader, int>("_lineStartPos");
+        private static Action<JsonTextReader, bool> _isEndOfFileField = GetFieldSetter<JsonTextReader, bool>("_isEndOfFile");
+
+        // private static Func<JsonTextReader, int> _stringBufferField = GetFieldInfo("_stringBuffer");
         private static ConstructorInfo _jsonReaderCtor = typeof(JsonReader).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance)[0];
 
         private Utf8BufferTextReader _reader = new Utf8BufferTextReader();
@@ -48,26 +51,64 @@ namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
             _reader.SetBuffer(payload);
 
             // HACK: Reset the internal state...
-            _readerField.SetValue(this, _reader);
-            _charsField.SetValue(this, null);
-            _charsUsedField.SetValue(this, 0);
-            _charsPosField.SetValue(this, 0);
-            _lineStartPosField.SetValue(this, 0);
-            _lineNumberField.SetValue(this, 1);
-            _isEndOfFileField.SetValue(this, false);
-            _stringBufferField.SetValue(this, null);
+            _readerField(this, _reader);
+            _charsField(this, null);
+            _charsUsedField(this, 0);
+            _charsPosField(this, 0);
+            _lineStartPosField(this, 0);
+            _lineNumberField(this, 1);
+            _isEndOfFileField(this, false);
+            // _stringBufferField.SetValue(this, null);
             _jsonReaderCtor.Invoke(this, Array.Empty<object>());
             CloseInput = false;
         }
 
         public void Reset()
         {
-            var chars = (char[])_charsField.GetValue(this);
+            var chars = _getChars(this);
             ArrayPool.Return(chars);
         }
 
+        public static Func<T, R> GetFieldGetter<T, R>(string fieldName)
+        {
+            // this => this.fieldName
+            ParameterExpression param =
+            Expression.Parameter(typeof(T), "this");
+
+            MemberExpression member =
+            Expression.Field(param, fieldName);
+
+            LambdaExpression lambda =
+            Expression.Lambda(typeof(Func<T, R>), member, param);
+
+            Func<T, R> compiled = (Func<T, R>)lambda.Compile();
+            return compiled;
+        }
+
+        public static Action<T, A> GetFieldSetter<T, A>(string fieldName)
+        {
+            // (this, value) => a.fieldName = value
+            ParameterExpression param =
+            Expression.Parameter(typeof(T), "this");
+
+            ParameterExpression arg =
+            Expression.Parameter(typeof(A), "value");
+
+            MemberExpression member =
+            Expression.Field(param, fieldName);
+
+            LambdaExpression lambda =
+            Expression.Lambda(typeof(Action<T, A>), Expression.Assign(member, arg), arg, param);
+
+
+            Action<T, A> compiled = (Action<T, A>)lambda.Compile();
+            return compiled;
+        }
+
+
         private static FieldInfo GetFieldInfo(string name)
         {
+            // SetProperty(ReusableJsonTextReader)
             return typeof(JsonTextReader).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance);
         }
     }
