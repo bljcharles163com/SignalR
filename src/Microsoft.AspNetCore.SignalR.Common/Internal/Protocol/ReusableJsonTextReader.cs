@@ -26,13 +26,15 @@ namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
         private IArrayPool<char> _arrayPool;
          */
 
-        private static FieldInfo _readerField = GetFieldInfo("_readerField");
+        private static FieldInfo _readerField = GetFieldInfo("_reader");
         private static FieldInfo _charsField = GetFieldInfo("_chars");
         private static FieldInfo _charsUsedField = GetFieldInfo("_charsUsed");
+        private static FieldInfo _charsPosField = GetFieldInfo("_charPos");
         private static FieldInfo _lineStartPosField = GetFieldInfo("_lineStartPos");
         private static FieldInfo _lineNumberField = GetFieldInfo("_lineStartPos");
         private static FieldInfo _isEndOfFileField = GetFieldInfo("_isEndOfFile");
         private static FieldInfo _stringBufferField = GetFieldInfo("_stringBuffer");
+        private static ConstructorInfo _jsonReaderCtor = typeof(JsonReader).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance)[0];
 
         private Utf8BufferTextReader _reader = new Utf8BufferTextReader();
 
@@ -50,10 +52,12 @@ namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
             _readerField.SetValue(this, _reader);
             _charsField.SetValue(this, null);
             _charsUsedField.SetValue(this, 0);
+            _charsPosField.SetValue(this, 0);
             _lineStartPosField.SetValue(this, 0);
             _lineNumberField.SetValue(this, 1);
             _isEndOfFileField.SetValue(this, false);
             _stringBufferField.SetValue(this, null);
+            _jsonReaderCtor.Invoke(this, Array.Empty<object>());
         }
 
         private static FieldInfo GetFieldInfo(string name)
