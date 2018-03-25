@@ -10,7 +10,6 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Http.Internal;
 using Microsoft.AspNetCore.Connections;
@@ -444,40 +443,32 @@ namespace Microsoft.AspNetCore.Sockets
 
         private async Task ProcessSend(HttpContext context, HttpConnectionOptions options)
         {
-            try
+            var connection = await GetConnectionAsync(context, options);
+            if (connection == null)
             {
-                var connection = await GetConnectionAsync(context, options);
-                if (connection == null)
-                {
-                    // No such connection, GetConnection already set the response status code
-                    return;
-                }
-
-                context.Response.ContentType = "text/plain";
-
-                var transport = (TransportType?)connection.Items[ConnectionMetadataNames.Transport];
-                if (transport == TransportType.WebSockets)
-                {
-                    Log.PostNotAllowedForWebSockets(_logger);
-                    context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
-                    await context.Response.WriteAsync("POST requests are not allowed for WebSocket connections.");
-                    return;
-                }
-
-                // Until the parsers are incremental, we buffer the entire request body before
-                // flushing the buffer. Using CopyToAsync allows us to avoid allocating a single giant
-                // buffer before writing.
-                var pipeWriterStream = new PipeWriterStream(connection.Application.Output);
-                await context.Request.Body.CopyToAsync(pipeWriterStream);
-
-                Log.ReceivedBytes(_logger, pipeWriterStream.Length);
-                await connection.Application.Output.FlushAsync();
+                // No such connection, GetConnection already set the response status code
+                return;
             }
-            catch (Exception ex)
+
+            context.Response.ContentType = "text/plain";
+
+            var transport = (TransportType?)connection.Items[ConnectionMetadataNames.Transport];
+            if (transport == TransportType.WebSockets)
             {
-                _logger.LogError(ex, "Error sending message to Connection");
-                throw;
+                Log.PostNotAllowedForWebSockets(_logger);
+                context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+                await context.Response.WriteAsync("POST requests are not allowed for WebSocket connections.");
+                return;
             }
+
+            // Until the parsers are incremental, we buffer the entire request body before
+            // flushing the buffer. Using CopyToAsync allows us to avoid allocating a single giant
+            // buffer before writing.
+            var pipeWriterStream = new PipeWriterStream(connection.Application.Output);
+            await context.Request.Body.CopyToAsync(pipeWriterStream);
+
+            Log.ReceivedBytes(_logger, pipeWriterStream.Length);
+            await connection.Application.Output.FlushAsync();
         }
 
         private async Task<bool> EnsureConnectionStateAsync(HttpConnectionContext connection, HttpContext context, TransportType transportType, TransportType supportedTransports, ConnectionLogScope logScope, HttpConnectionOptions options)
