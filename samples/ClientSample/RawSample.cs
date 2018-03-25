@@ -51,8 +51,8 @@ namespace ClientSample
                     shutdown.TrySetResult(null);
                 };
 
-                _ = Task.Run(() => SendLoop(Console.In, connection.Transport.Output));
-                _ = Task.Run(() => ReceiveLoop(Console.Out, connection.Transport.Input));
+                _ = ReceiveLoop(Console.Out, connection.Transport.Input);
+                _ = SendLoop(Console.In, connection.Transport.Output);
 
                 await shutdown.Task;
             }
