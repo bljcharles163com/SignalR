@@ -61,14 +61,21 @@ namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
             using (var pooled = SharedObjectPool<ReusableJsonTextReader>.Get())
             {
                 var textReader = pooled.Item;
-                while (TextMessageParser.TryParseMessage(ref input, out var payload))
+                try
                 {
-                    textReader.SetBuffer(payload);
-                    var message = ParseMessage(textReader, binder);
-                    if (message != null)
+                    while (TextMessageParser.TryParseMessage(ref input, out var payload))
                     {
-                        messages.Add(message);
+                        textReader.SetBuffer(payload);
+                        var message = ParseMessage(textReader, binder);
+                        if (message != null)
+                        {
+                            messages.Add(message);
+                        }
                     }
+                }
+                finally
+                {
+                    textReader.Reset();
                 }
             }
 
@@ -106,8 +113,6 @@ namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
                 Dictionary<string, string> headers = null;
                 var completed = false;
 
-                reader.CloseInput = false;
-                reader.ArrayPool = JsonArrayPool<char>.Shared;
 
                 JsonUtils.CheckRead(reader);
 

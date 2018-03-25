@@ -41,7 +41,6 @@ namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
         public ReusableJsonTextReader() : base(TextReader.Null)
         {
             ArrayPool = JsonArrayPool<char>.Shared;
-            CloseInput = false;
         }
 
         public void SetBuffer(ReadOnlyMemory<byte> payload)
@@ -58,6 +57,13 @@ namespace Microsoft.AspNetCore.SignalR.Internal.Protocol
             _isEndOfFileField.SetValue(this, false);
             _stringBufferField.SetValue(this, null);
             _jsonReaderCtor.Invoke(this, Array.Empty<object>());
+            CloseInput = false;
+        }
+
+        public void Reset()
+        {
+            var chars = (char[])_charsField.GetValue(this);
+            ArrayPool.Return(chars);
         }
 
         private static FieldInfo GetFieldInfo(string name)
